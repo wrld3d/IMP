@@ -278,7 +278,7 @@ void ImposterVertex( inout ImposterData imp )
     half4 vertex = imp.vertex;
     
     //camera in object space
-    half3 objectSpaceCameraPos = mul( unity_WorldToObject, float4(_WorldSpaceCameraPos.xyz,1) ).xyz;
+    half3 objectSpaceCameraPos = mul( unity_WorldToObject, float4(_WorldSpaceCameraPos.xyz,1) ).xyz - vertex.xyz;
     half2 texcoord = imp.uv;
     float4x4 objectToWorld = unity_ObjectToWorld;
     float4x4 worldToObject = unity_WorldToObject;
@@ -307,8 +307,6 @@ void ImposterVertex( inout ImposterData imp )
     vertexOffset = normalize(objectSpaceCameraPos-vertexOffset);
     //then add the original projected world
     vertexOffset += projected;
-    //remove position of vertex
-    vertexOffset -= vertex.xyz;
     //add pivot
     vertexOffset += imposterPivotOffset;
 

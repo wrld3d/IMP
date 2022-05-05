@@ -36,11 +36,11 @@ public class BillboardImposter : ScriptableObject
     {
         var vertices = new[]
         {
-            new Vector3(0f, 0.0f, 0f),
-            new Vector3(-0.5f, 0.0f, -0.5f),
-            new Vector3(0.5f, 0.0f, -0.5f),
-            new Vector3(0.5f, 0.0f, 0.5f),
-            new Vector3(-0.5f, 0.0f, 0.5f)
+            Vector3.zero,
+            Vector3.zero,
+            Vector3.zero,
+            Vector3.zero,
+            Vector3.zero
         };
 
         var triangles = new[]
