@@ -31,7 +31,110 @@ public class BillboardImposter : ScriptableObject
     public string PrefabSuffix;
     public float Radius;
 
+    [Serializable]
+    private class SerialisableRepresentation
+    {
+        public int AtlasResolution;
+        public int Frames;
+        public bool IsHalf;
+        public Vector3 Offset;
+        public string PrefabSuffix;
+        public float Radius;
+        // figure out better alternative long-term
+        public byte[] baseTexturePngData;
+        public byte[] packTexturePngData;
+    }
+
+    private GameObject GenerateGameObject(string name)
+    {
+        var go = new GameObject(name);
+        go.transform.position = Vector3.zero;
+        go.transform.rotation = Quaternion.identity;
+        go.transform.localScale = Vector3.one;
+        var mf = go.AddComponent<MeshFilter>();
+        var mr = go.AddComponent<MeshRenderer>();
+        mf.sharedMesh = Mesh;
+        mr.sharedMaterial = Material;
+
+        mr.shadowCastingMode = ShadowCastingMode.Off;
+        mr.receiveShadows = false;
+
+        go.SetActive(false);
+
+        return go;
+    }
+
+    private void CreateMaterial()
+    {
+        var shader = Shader.Find("XRA/IMP/Standard (Surface)");
+
+        Material = new Material(shader);
+
+        Material.SetTexture("_ImposterBaseTex", BaseTexture);
+        Material.SetTexture("_ImposterWorldNormalDepthTex", PackTexture);
+
+        Material.SetFloat("_ImposterFrames", Frames);
+        Material.SetFloat("_ImposterSize", Radius);
+        Material.SetVector("_ImposterOffset", Offset);
+        Material.SetFloat("_ImposterFullSphere", IsHalf ? 0f : 1f);
+        Material.name = name;
+    }
+
+    public void InitialiseFromJSON(string json)
+    {
+        SerialisableRepresentation intermediate = JsonUtility.FromJson<SerialisableRepresentation>(json);
+        AtlasResolution = intermediate.AtlasResolution;
+        Frames = intermediate.Frames;
+        IsHalf = intermediate.IsHalf;
+        Offset = intermediate.Offset;
+        PrefabSuffix = intermediate.PrefabSuffix;
+        Radius = intermediate.Radius;
+
+        if (BaseTexture == null)
+            BaseTexture = new Texture2D(AtlasResolution, AtlasResolution);
+        BaseTexture.LoadImage(intermediate.baseTexturePngData);
+        BaseTexture.Compress(true);
+        BaseTexture.anisoLevel = 16;
+
+        if (PackTexture == null)
+            PackTexture = new Texture2D(AtlasResolution, AtlasResolution);
+        PackTexture.LoadImage(intermediate.packTexturePngData);
+        PackTexture.Compress(true);
+        PackTexture.anisoLevel = 16;
+
+        Mesh = MeshSetup();
+
+        CreateMaterial();
+
+        if (Prefab == null || Prefab.GetComponent<MeshFilter>() == null)
+        {
+            string prefName = name;
+            if (PrefabSuffix != string.Empty)
+                prefName = prefName + "_" + PrefabSuffix;
+            Prefab = GenerateGameObject(prefName);
+        }
+}
+
+    public string SerialiseToJSON()
+    {
+        SerialisableRepresentation intermediate = new SerialisableRepresentation();
+        intermediate.AtlasResolution = AtlasResolution;
+        intermediate.Frames = Frames;
+        intermediate.IsHalf = IsHalf;
+        intermediate.Offset = Offset;
+        intermediate.PrefabSuffix = PrefabSuffix;
+        intermediate.Radius = Radius;
 #if UNITY_EDITOR
+        intermediate.baseTexturePngData = File.ReadAllBytes(AssetDatabase.GetAssetPath(BaseTexture));
+        intermediate.packTexturePngData = File.ReadAllBytes(AssetDatabase.GetAssetPath(PackTexture));
+        return EditorJsonUtility.ToJson(intermediate);
+#else
+        intermediate.baseTexturePngData = BaseTexture.EncodeToPNG();
+        intermediate.packTexturePngData = PackTexture.EncodeToPNG();
+        return JsonUtility.ToJson(intermediate);
+#endif
+    }
+
     private Mesh MeshSetup()
     {
         var vertices = new[]
@@ -83,6 +186,26 @@ public class BillboardImposter : ScriptableObject
         return mesh;
     }
 
+    public GameObject Spawn(Vector3 pos, bool createNew = false, string prefabName = "")
+    {
+        GameObject gameObject;
+#if UNITY_EDITOR
+        if (Prefab == null || createNew)
+            CreatePrefab(true, prefabName);
+
+        if (PrefabUtility.GetPrefabType(Prefab) == PrefabType.Prefab)
+            gameObject = (GameObject)PrefabUtility.InstantiatePrefab(Prefab);
+        else
+#endif
+            gameObject = Instantiate(Prefab);
+        gameObject.transform.position = pos;
+        gameObject.SetActive(true);
+        return gameObject;
+    }
+
+#if UNITY_EDITOR
+
+
     private static string WriteTexture(Texture2D tex, string path, string name)
     {
         var bytes = tex.EncodeToPNG();
@@ -119,6 +242,7 @@ public class BillboardImposter : ScriptableObject
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = false;
             importer.sRGBTexture = false;
+            importer.anisoLevel = 16;
             importer.SaveAndReimport();
             BaseTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(baseTexPath);
         }
@@ -131,22 +255,12 @@ public class BillboardImposter : ScriptableObject
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = false;
             importer.sRGBTexture = false;
+            importer.anisoLevel = 16;
             importer.SaveAndReimport();
             PackTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(normTexPath);
         }
 
-        var shader = Shader.Find("XRA/IMP/Standard (Surface)");
-
-        Material = new Material(shader);
-        
-        Material.SetTexture("_ImposterBaseTex", BaseTexture);
-        Material.SetTexture("_ImposterWorldNormalDepthTex", PackTexture);
-
-        Material.SetFloat("_ImposterFrames", Frames);
-        Material.SetFloat("_ImposterSize", Radius);
-        Material.SetVector("_ImposterOffset", Offset);
-        Material.SetFloat("_ImposterFullSphere", IsHalf ? 0f : 1f);
-        Material.name = assetName;
+        CreateMaterial();
         EditorUtility.SetDirty(Material);
 
         //create material
@@ -176,17 +290,8 @@ public class BillboardImposter : ScriptableObject
 
         if (PrefabSuffix != string.Empty) prefName = prefName + "_" + PrefabSuffix;
 
-        var go = new GameObject(prefName);
-        go.transform.position = Vector3.zero;
-        go.transform.rotation = Quaternion.identity;
-        go.transform.localScale = Vector3.one;
-        var mf = go.AddComponent<MeshFilter>();
-        var mr = go.AddComponent<MeshRenderer>();
-        mf.sharedMesh = Mesh;
-        mr.sharedMaterial = Material;
-
-        mr.shadowCastingMode = ShadowCastingMode.Off;
-        mr.receiveShadows = false;
+        GameObject go = GenerateGameObject(prefName);
+        go.SetActive(true);
         
         //try to get existing
         var prefabPath = folder + "/" + prefName + ".prefab";
@@ -198,17 +303,11 @@ public class BillboardImposter : ScriptableObject
         EditorUtility.SetDirty(this);
         AssetDatabase.SaveAssets();
 
+        File.WriteAllText(folder + "/" + prefName + ".json", SerialiseToJSON());
+
         if (!destroyAfterSpawn) return go;
         DestroyImmediate(go, true);
         return null;
-    }
-
-    public GameObject Spawn(Vector3 pos, bool createNew = false, string prefabName = "")
-    {
-        if (Prefab == null || createNew)
-            CreatePrefab(true, prefabName);
-
-        return (GameObject)PrefabUtility.InstantiatePrefab(Prefab);
     }
 
     private BillboardAsset CreateUnityBillboardAsset( string folder, string assetName, string assetPath )
